@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import torch
@@ -10,6 +11,15 @@ import yfinance as yf
 from datetime import datetime, timedelta
 
 app = FastAPI(title="Trading Strategy API")
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # Vite's default port
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 # Model performance metrics from training
 MODEL_METRICS = {
@@ -115,14 +125,32 @@ class TradingData(BaseModel):
     window_size: Optional[int] = 30  # Optional parameter to specify how many records to use
 
 @app.get("/real_time_prediction")
-async def real_time_prediction(window_size: Optional[int] = 30):
+async def real_time_prediction(
+    window_size: Optional[int] = 30,
+    symbol: str = 'AAPL',
+    model_path: str = 'TDQN_AAPL_2012-1-1_2018-1-1.pth'
+):
     try:
-        # Get AAPL data
+        # Load the appropriate model
+        model_full_path = os.path.join("Strategies", model_path)
+        if not os.path.exists(model_full_path):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model file not found: {model_path}"
+            )
+        
+        # Load the model
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = TDQN().to(device)
+        model.load_state_dict(torch.load(model_full_path, map_location=device))
+        model.eval()
+
+        # Get stock data
         end_time = datetime.now()
         # For daily data, get much more historical data to ensure we have enough trading days
         start_time = end_time - timedelta(days=window_size * 4)  # Get 4x days to account for weekends/holidays/market closures
         
-        ticker = yf.Ticker("AAPL")
+        ticker = yf.Ticker(symbol)
         df = ticker.history(start=start_time, end=end_time, interval='1d')
         
         if len(df) == 0:
@@ -133,7 +161,7 @@ async def real_time_prediction(window_size: Optional[int] = 30):
             if len(df) == 0:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"No data available. Market might be closed or there might be an issue with the data feed."
+                    detail=f"No data available for {symbol}. Market might be closed or there might be an issue with the data feed."
                 )
         
         # Validate data dates
@@ -181,7 +209,8 @@ async def real_time_prediction(window_size: Optional[int] = 30):
         prediction["data_info"] = {
             "last_update": df.index[-1].strftime("%Y-%m-%d"),
             "interval": "1d",
-            "symbol": "AAPL",
+            "symbol": symbol,
+            "model": model_path,
             "window_size": window_size,
             "total_records_available": len(df),
             "date_range": {
