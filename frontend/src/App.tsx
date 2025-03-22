@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LineChart as LucideLineChart, BarChart as LucideBarChart, Activity, TrendingUp, Brain, Github, Twitter, Linkedin } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import axios from 'axios';
 
 interface MetricsBoxProps {
   title: string;
@@ -9,6 +10,62 @@ interface MetricsBoxProps {
   isPositive?: boolean;
   icon?: React.ReactNode;
 }
+
+interface RealTimeData {
+  prediction: {
+    action: number;
+    confidence: number;
+  };
+  trading_signal: {
+    tdqn_decision: {
+      target_position: number;
+      position_change: number;
+      confidence: number;
+    };
+    current_state: {
+      position: number;
+    };
+  };
+  performance_metrics: {
+    "Performance Indicator": string[];
+    "TDQN": string[];
+  };
+  timing: {
+    feature_calculation: number;
+    tensor_conversion: number;
+    model_inference: number;
+    total_time: number;
+  };
+  data_info: {
+    last_update: string;
+    interval: string;
+    symbol: string;
+    window_size: number;
+    total_records_available: number;
+    date_range: {
+      start: string;
+      end: string;
+    };
+    trading_days_found: number;
+    calendar_days_searched: number;
+    price_change_percent: number;
+    current_price: number;
+  };
+}
+
+interface StockOption {
+  symbol: string;
+  name: string;
+  modelPath: string;
+}
+
+const AVAILABLE_STOCKS: StockOption[] = [
+  { symbol: 'AAPL', name: 'Apple Inc.', modelPath: 'TDQN_AAPL_2012-1-1_2018-1-1.pth' },
+  { symbol: '7203.T', name: 'Toyota Motor Corp.', modelPath: 'TDQN_7203.T_2012-1-1_2018-1-1.pth' },
+  { symbol: 'SHEL', name: 'Shell PLC', modelPath: 'TDQN_SHEL_2012-1-1_2018-1-1.pth' },
+  { symbol: 'TSLA', name: 'Tesla Inc.', modelPath: 'TDQN_TSLA_2012-1-1_2018-1-1.pth' },
+  { symbol: 'VOW3.DE', name: 'Volkswagen AG', modelPath: 'TDQN_VOW3.DE_2012-1-1_2018-1-1.pth' },
+];
 
 const MetricsBox: React.FC<MetricsBoxProps> = ({ title, value, change, isPositive, icon }) => (
   <div className="bg-gray-800 p-6 rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-300 border border-gray-700">
@@ -26,44 +83,90 @@ const MetricsBox: React.FC<MetricsBoxProps> = ({ title, value, change, isPositiv
 );
 
 function App() {
-  const [company, setCompany] = useState('');
-  const [strategy, setStrategy] = useState('TDQN');
+  const [selectedStock, setSelectedStock] = useState<StockOption>(AVAILABLE_STOCKS[0]);
+  const [strategy] = useState('TDQN');
+  const [realTimeData, setRealTimeData] = useState<RealTimeData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const metrics = {
-    pnl: '+$12,450',
-    annualReturn: '18.5%',
-    volatility: '12.3%',
-    sharpeRatio: '1.8',
-    sortinoRatio: '2.1',
-    maxDrawdown: '-15.4%',
-    drawdownDuration: '45 days',
-    profitability: '68%',
-    profitLossRatio: '2.3',
-    skewness: '0.45'
+  const fetchRealTimeData = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get('http://localhost:8000/real_time_prediction', {
+        params: {
+          symbol: selectedStock.symbol,
+          model_path: selectedStock.modelPath
+        }
+      });
+      setRealTimeData(response.data);
+      console.log(response.data);
+      
+      setError(null);
+    } catch (err) {
+      setError('Failed to fetch real-time data. Please try again later.');
+      console.error('Error fetching real-time data:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Sample data for charts
-  const capitalData = Array.from({ length: 20 }, (_, i) => ({
-    timestamp: `Day ${i + 1}`,
-    capital: 10000 + Math.random() * 5000
-  }));
+  useEffect(() => {
+    fetchRealTimeData();
+  }, [selectedStock]); // Refetch when selected stock changes
 
-  const priceData = Array.from({ length: 20 }, (_, i) => ({
-    timestamp: `Day ${i + 1}`,
-    price: 100 + Math.random() * 20
-  }));
+  useEffect(() => {
+    // Set up polling every 5 minutes
+    const interval = setInterval(fetchRealTimeData, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [selectedStock]);
 
-  const sharpeData = Array.from({ length: 10 }, (_, i) => ({
+  // Transform performance metrics for display
+  const metrics = realTimeData ? {
+    pnl: realTimeData.performance_metrics.TDQN[0],
+    annualReturn: realTimeData.performance_metrics.TDQN[1],
+    volatility: realTimeData.performance_metrics.TDQN[2],
+    sharpeRatio: realTimeData.performance_metrics.TDQN[3],
+    sortinoRatio: realTimeData.performance_metrics.TDQN[4],
+    maxDrawdown: realTimeData.performance_metrics.TDQN[5],
+    drawdownDuration: realTimeData.performance_metrics.TDQN[6],
+    profitability: realTimeData.performance_metrics.TDQN[7],
+    profitLossRatio: realTimeData.performance_metrics.TDQN[8],
+    skewness: realTimeData.performance_metrics.TDQN[9]
+  } : {
+    pnl: '0',
+    annualReturn: '0%',
+    volatility: '0%',
+    sharpeRatio: '0',
+    sortinoRatio: '0',
+    maxDrawdown: '0%',
+    drawdownDuration: '0 days',
+    profitability: '0%',
+    profitLossRatio: '0',
+    skewness: '0'
+  };
+
+  // Generate data for charts based on real-time data
+  const capitalData = realTimeData ? Array.from({ length: realTimeData.data_info.trading_days_found }, (_, i) => ({
+    timestamp: new Date(new Date(realTimeData.data_info.date_range.start).getTime() + i * 24 * 60 * 60 * 1000).toLocaleDateString(),
+    capital: 10000 + (parseFloat(metrics.pnl) * (i + 1) / realTimeData.data_info.trading_days_found)
+  })) : [];
+
+  const priceData = realTimeData ? Array.from({ length: realTimeData.data_info.trading_days_found }, (_, i) => ({
+    timestamp: new Date(new Date(realTimeData.data_info.date_range.start).getTime() + i * 24 * 60 * 60 * 1000).toLocaleDateString(),
+    price: realTimeData.data_info.current_price * (1 + (realTimeData.data_info.price_change_percent / 100) * (i + 1) / realTimeData.data_info.trading_days_found)
+  })) : [];
+
+  const sharpeData = realTimeData ? Array.from({ length: 10 }, (_, i) => ({
     episode: i + 1,
-    sharpe: 0.5 + Math.random() * 2
-  }));
+    sharpe: parseFloat(metrics.sharpeRatio) * (0.8 + Math.random() * 0.4)
+  })) : [];
 
-  const qValueData = Array.from({ length: 10 }, (_, i) => ({
+  const qValueData = realTimeData ? Array.from({ length: 10 }, (_, i) => ({
     time: `T${i + 1}`,
-    buy: Math.random() * 0.8,
-    sell: Math.random() * 0.6,
-    hold: Math.random() * 0.4
-  }));
+    buy: realTimeData.trading_signal.tdqn_decision.confidence * (0.6 + Math.random() * 0.4),
+    sell: realTimeData.trading_signal.tdqn_decision.confidence * (0.2 + Math.random() * 0.3),
+    hold: realTimeData.trading_signal.tdqn_decision.confidence * (0.1 + Math.random() * 0.2)
+  })) : [];
 
   return (
     <div className="min-h-screen bg-gray-900 flex flex-col">
@@ -88,45 +191,53 @@ function App() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <div className="relative">
             <label className="block text-sm font-semibold text-gray-300 mb-2">Company</label>
-            <input
-              type="text"
-              value={company}
-              onChange={(e) => setCompany(e.target.value)}
-              className="w-full px-4 py-3 rounded-lg border-2 border-gray-700 focus:border-blue-500 focus:ring focus:ring-blue-500/20 transition-all duration-200 bg-gray-800 text-white placeholder-gray-500"
-              placeholder="Enter company symbol (e.g., AAPL)"
-            />
+            <select
+              value={selectedStock.symbol}
+              onChange={(e) => {
+                const stock = AVAILABLE_STOCKS.find(s => s.symbol === e.target.value);
+                if (stock) setSelectedStock(stock);
+              }}
+              className="w-full px-4 py-3 rounded-lg border-2 border-gray-700 focus:border-blue-500 focus:ring focus:ring-blue-500/20 transition-all duration-200 bg-gray-800 text-white"
+            >
+              {AVAILABLE_STOCKS.map(stock => (
+                <option key={stock.symbol} value={stock.symbol}>
+                  {stock.name} ({stock.symbol})
+                </option>
+              ))}
+            </select>
           </div>
           <div className="relative">
             <label className="block text-sm font-semibold text-gray-300 mb-2">Strategy</label>
-            <select
-              value={strategy}
-              onChange={(e) => setStrategy(e.target.value)}
-              className="w-full px-4 py-3 rounded-lg border-2 border-gray-700 focus:border-blue-500 focus:ring focus:ring-blue-500/20 transition-all duration-200 bg-gray-800 text-white appearance-none"
-            >
-              <option value="TDQN">TDQN</option>
-              <option value="DQN">DQN</option>
-            </select>
-            <div className="absolute right-3 top-[2.35rem] pointer-events-none">
-              <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            </div>
+            <input
+              type="text"
+              value="TDQN"
+              disabled
+              className="w-full px-4 py-3 rounded-lg border-2 border-gray-700 bg-gray-800 text-gray-500 cursor-not-allowed"
+            />
           </div>
         </div>
 
         {/* Trading Signal */}
-        <div className="bg-gray-800 rounded-xl shadow-lg p-8 mb-8 border border-gray-700">
+        <div className="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700 mb-6">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-bold text-white mb-2">Trading Signal</h2>
-              <p className="text-gray-400">Market analysis suggests a strong buying opportunity</p>
+              {loading ? (
+                <p className="text-gray-400">Loading market analysis...</p>
+              ) : error ? (
+                <p className="text-red-400">{error}</p>
+              ) : realTimeData ? (
+                <p className="text-gray-400">Current position: {realTimeData.trading_signal.tdqn_decision.target_position.toFixed(3)}</p>
+              ) : null}
             </div>
-            <div className="flex items-center space-x-3">
-              <span className="px-6 py-3 bg-green-900/50 text-green-400 rounded-full text-lg font-semibold shadow-lg border border-green-700/50">
-                BUY
-              </span>
-              <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse shadow-lg shadow-green-400/50"></div>
-            </div>
+            {!loading && !error && realTimeData && (
+              <div className="flex items-center space-x-3">
+                <span className="px-6 py-3 bg-blue-900/50 text-blue-400 rounded-full text-lg font-semibold shadow-lg border border-blue-700/50">
+                  {realTimeData.trading_signal.tdqn_decision.target_position.toFixed(3)}
+                </span>
+                <div className="w-3 h-3 bg-blue-400 rounded-full animate-pulse shadow-lg shadow-blue-400/50"></div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -142,10 +253,30 @@ function App() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={capitalData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="timestamp" stroke="#9CA3AF" />
-                  <YAxis stroke="#9CA3AF" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }} />
-                  <Line type="monotone" dataKey="capital" stroke="#60A5FA" strokeWidth={2} />
+                  <XAxis 
+                    dataKey="timestamp" 
+                    stroke="#9CA3AF"
+                    tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}
+                  />
+                  <YAxis 
+                    stroke="#9CA3AF" 
+                    domain={[9900, 10100]}
+                    tickCount={5}
+                    tickFormatter={(value) => value.toFixed(0)}
+                  />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                    formatter={(value: any) => [`$${Number(value).toFixed(2)}`, 'Capital']}
+                    labelFormatter={(label) => new Date(label).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="capital" 
+                    stroke="#60A5FA" 
+                    strokeWidth={2}
+                    dot={false}
+                    isAnimationActive={false}
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -161,10 +292,30 @@ function App() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={priceData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="timestamp" stroke="#9CA3AF" />
-                  <YAxis stroke="#9CA3AF" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }} />
-                  <Line type="monotone" dataKey="price" stroke="#34D399" strokeWidth={2} />
+                  <XAxis 
+                    dataKey="timestamp" 
+                    stroke="#9CA3AF"
+                    tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}
+                  />
+                  <YAxis 
+                    stroke="#9CA3AF"
+                    domain={[210, 220]}
+                    tickCount={5}
+                    tickFormatter={(value) => value.toFixed(0)}
+                  />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                    formatter={(value: any) => [`$${Number(value).toFixed(2)}`, 'Price']}
+                    labelFormatter={(label) => new Date(label).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="price" 
+                    stroke="#34D399" 
+                    strokeWidth={2}
+                    dot={false}
+                    isAnimationActive={false}
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -212,28 +363,59 @@ function App() {
         </div>
 
         {/* Additional Metrics */}
-        <div className="bg-gray-800 rounded-xl shadow-lg p-8 border border-gray-700">
+        <div className="mt-8">
           <h2 className="text-2xl font-bold text-white mb-6">Performance Metrics</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+            <MetricsBox 
+              title="Profit & Loss" 
+              value={metrics.pnl}
+              isPositive={parseFloat(metrics.pnl) > 0}
+              icon={<TrendingUp className="w-5 h-5" />}
+            />
+            <MetricsBox 
+              title="Annualized Return" 
+              value={metrics.annualReturn}
+              isPositive={parseFloat(metrics.annualReturn) > 0}
+              icon={<TrendingUp className="w-5 h-5" />}
+            />
+            <MetricsBox 
+              title="Sharpe Ratio" 
+              value={metrics.sharpeRatio}
+              isPositive={parseFloat(metrics.sharpeRatio) > 0}
+              icon={<Activity className="w-5 h-5" />}
+            />
+            <MetricsBox 
+              title="Maximum Drawdown" 
+              value={metrics.maxDrawdown}
+              isPositive={false}
+              icon={<Activity className="w-5 h-5" />}
+            />
+            <MetricsBox 
+              title="Profitability" 
+              value={metrics.profitability}
+              isPositive={parseFloat(metrics.profitability) > 50}
+              icon={<TrendingUp className="w-5 h-5" />}
+            />
             <MetricsBox 
               title="Maximum Drawdown Duration" 
               value={metrics.drawdownDuration}
               icon={<Activity className="w-5 h-5" />}
             />
             <MetricsBox 
-              title="Profitability" 
-              value={metrics.profitability}
-              isPositive={true}
-              icon={<TrendingUp className="w-5 h-5" />}
-            />
-            <MetricsBox 
               title="Profit/Loss Ratio" 
               value={metrics.profitLossRatio}
-              icon={<LucideLineChart className="w-5 h-5" />}
+              isPositive={parseFloat(metrics.profitLossRatio) > 1}
+              icon={<TrendingUp className="w-5 h-5" />}
             />
             <MetricsBox 
               title="Annualized Volatility" 
               value={metrics.volatility}
+              icon={<Activity className="w-5 h-5" />}
+            />
+            <MetricsBox 
+              title="Sortino Ratio" 
+              value={metrics.sortinoRatio}
+              isPositive={parseFloat(metrics.sortinoRatio) > 0}
               icon={<Activity className="w-5 h-5" />}
             />
             <MetricsBox 
