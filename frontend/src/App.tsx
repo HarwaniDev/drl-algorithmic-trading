@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { LineChart as LucideLineChart, BarChart as LucideBarChart, Activity, TrendingUp, Brain, Github, Twitter, Linkedin } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import axios from 'axios';
+import ChatBot from './components/ChatBot';
 
 interface MetricsBoxProps {
   title: string;
@@ -146,15 +147,29 @@ function App() {
   };
 
   // Generate data for charts based on real-time data
-  const capitalData = realTimeData ? Array.from({ length: realTimeData.data_info.trading_days_found }, (_, i) => ({
-    timestamp: new Date(new Date(realTimeData.data_info.date_range.start).getTime() + i * 24 * 60 * 60 * 1000).toLocaleDateString(),
-    capital: 10000 + (parseFloat(metrics.pnl) * (i + 1) / realTimeData.data_info.trading_days_found)
-  })) : [];
+  const capitalData = realTimeData ? Array.from({ length: realTimeData.data_info.trading_days_found }, (_, i) => {
+    const baseCapital = 10000;
+    const dailyChange = parseFloat(metrics.pnl) / realTimeData.data_info.trading_days_found;
+    const cumulativeChange = dailyChange * (i + 1);
+    const date = new Date();
+    date.setDate(date.getDate() - (realTimeData.data_info.trading_days_found - i - 1));
+    return {
+      timestamp: date.toISOString().split('T')[0],
+      capital: baseCapital * (1 + cumulativeChange / 100)
+    };
+  }) : [];
 
-  const priceData = realTimeData ? Array.from({ length: realTimeData.data_info.trading_days_found }, (_, i) => ({
-    timestamp: new Date(new Date(realTimeData.data_info.date_range.start).getTime() + i * 24 * 60 * 60 * 1000).toLocaleDateString(),
-    price: realTimeData.data_info.current_price * (1 + (realTimeData.data_info.price_change_percent / 100) * (i + 1) / realTimeData.data_info.trading_days_found)
-  })) : [];
+  const priceData = realTimeData ? Array.from({ length: realTimeData.data_info.trading_days_found }, (_, i) => {
+    const basePrice = realTimeData.data_info.current_price;
+    const dailyChange = realTimeData.data_info.price_change_percent / realTimeData.data_info.trading_days_found;
+    const cumulativeChange = dailyChange * (i + 1);
+    const date = new Date();
+    date.setDate(date.getDate() - (realTimeData.data_info.trading_days_found - i - 1));
+    return {
+      timestamp: date.toISOString().split('T')[0],
+      price: basePrice * (1 + cumulativeChange / 100)
+    };
+  }) : [];
 
   const sharpeData = realTimeData ? Array.from({ length: 10 }, (_, i) => ({
     episode: i + 1,
@@ -217,30 +232,6 @@ function App() {
           </div>
         </div>
 
-        {/* Trading Signal */}
-        <div className="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700 mb-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold text-white mb-2">Trading Signal</h2>
-              {loading ? (
-                <p className="text-gray-400">Loading market analysis...</p>
-              ) : error ? (
-                <p className="text-red-400">{error}</p>
-              ) : realTimeData ? (
-                <p className="text-gray-400">Current position: {realTimeData.trading_signal.tdqn_decision.target_position.toFixed(3)}</p>
-              ) : null}
-            </div>
-            {!loading && !error && realTimeData && (
-              <div className="flex items-center space-x-3">
-                <span className="px-6 py-3 bg-blue-900/50 text-blue-400 rounded-full text-lg font-semibold shadow-lg border border-blue-700/50">
-                  {realTimeData.trading_signal.tdqn_decision.target_position.toFixed(3)}
-                </span>
-                <div className="w-3 h-3 bg-blue-400 rounded-full animate-pulse shadow-lg shadow-blue-400/50"></div>
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           {/* Capital vs Timestamp */}
@@ -256,13 +247,15 @@ function App() {
                   <XAxis 
                     dataKey="timestamp" 
                     stroke="#9CA3AF"
-                    tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}
+                    tickFormatter={(value) => {
+                      const date = new Date(value);
+                      return `${date.getMonth() + 1}/${date.getDate()}`;
+                    }}
                   />
                   <YAxis 
-                    stroke="#9CA3AF" 
-                    domain={[9900, 10100]}
-                    tickCount={5}
-                    tickFormatter={(value) => value.toFixed(0)}
+                    stroke="#9CA3AF"
+                    domain={['dataMin - 100', 'dataMax + 100']}
+                    tickFormatter={(value) => `$${value.toFixed(0)}`}
                   />
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
@@ -275,7 +268,9 @@ function App() {
                     stroke="#60A5FA" 
                     strokeWidth={2}
                     dot={false}
-                    isAnimationActive={false}
+                    isAnimationActive={true}
+                    animationDuration={1000}
+                    animationEasing="ease-in-out"
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -295,13 +290,15 @@ function App() {
                   <XAxis 
                     dataKey="timestamp" 
                     stroke="#9CA3AF"
-                    tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}
+                    tickFormatter={(value) => {
+                      const date = new Date(value);
+                      return `${date.getMonth() + 1}/${date.getDate()}`;
+                    }}
                   />
                   <YAxis 
                     stroke="#9CA3AF"
-                    domain={[210, 220]}
-                    tickCount={5}
-                    tickFormatter={(value) => value.toFixed(0)}
+                    domain={['dataMin - 1', 'dataMax + 1']}
+                    tickFormatter={(value) => `$${value.toFixed(2)}`}
                   />
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
@@ -314,7 +311,9 @@ function App() {
                     stroke="#34D399" 
                     strokeWidth={2}
                     dot={false}
-                    isAnimationActive={false}
+                    isAnimationActive={true}
+                    animationDuration={1000}
+                    animationEasing="ease-in-out"
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -427,12 +426,15 @@ function App() {
         </div>
       </main>
 
+      {/* Add ChatBot */}
+      {realTimeData && <ChatBot metrics={metrics} selectedStock={{ symbol: selectedStock.symbol, name: selectedStock.name }} />}
+
       {/* Footer */}
       <footer className="bg-gray-800 border-t border-gray-700 mt-auto">
         <div className="max-w-7xl mx-auto px-4 py-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {/* About Section */}
-            <div>
+            <div className="flex flex-col">
               <h3 className="text-lg font-semibold text-white mb-4">About DRL Trading</h3>
               <p className="text-gray-400">
                 Advanced algorithmic trading platform powered by Deep Reinforcement Learning, 
@@ -441,21 +443,12 @@ function App() {
             </div>
             
             {/* Quick Links */}
-            <div>
+            <div className="flex flex-col items-center">
               <h3 className="text-lg font-semibold text-white mb-4">Quick Links</h3>
               <ul className="space-y-2">
                 <li>
-                  <a href="#" className="text-gray-400 hover:text-blue-400 transition-colors duration-200">
-                    Documentation
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="text-gray-400 hover:text-blue-400 transition-colors duration-200">
-                    API Reference
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="text-gray-400 hover:text-blue-400 transition-colors duration-200">
+                  <a href="https://drive.google.com/file/d/1Gs-FjVfHaPndnS7X9tlq-QqshtqVu_If/view?usp=drivesdk" 
+                     className="text-gray-400 hover:text-blue-400 transition-colors duration-200">
                     Research Papers
                   </a>
                 </li>
@@ -463,17 +456,12 @@ function App() {
             </div>
 
             {/* Connect */}
-            <div>
+            <div className="flex flex-col items-center">
               <h3 className="text-lg font-semibold text-white mb-4">Connect</h3>
               <div className="flex space-x-4">
-                <a href="#" className="text-gray-400 hover:text-blue-400 transition-colors duration-200">
+                <a href="https://github.com/HarwaniDev/drl-algorithmic-trading" 
+                   className="text-gray-400 hover:text-blue-400 transition-colors duration-200">
                   <Github className="w-6 h-6" />
-                </a>
-                <a href="#" className="text-gray-400 hover:text-blue-400 transition-colors duration-200">
-                  <Twitter className="w-6 h-6" />
-                </a>
-                <a href="#" className="text-gray-400 hover:text-blue-400 transition-colors duration-200">
-                  <Linkedin className="w-6 h-6" />
                 </a>
               </div>
             </div>
